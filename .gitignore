@@ -1,14 +1,15 @@
-# Environment files
+# Environment
 .env
 .env.local
-.env*.local
-config.env
+.env.*.local
+*.key
+*.pem
 
-# Virtual environment
+# Virtual Environment
+.venv/
 venv/
-env/
 ENV/
-.venv
+env/
 
 # Python
 __pycache__/
@@ -35,7 +36,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# IDEs
+# Streamlit
+.streamlit/
+*.streamlit.app
+
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -43,21 +48,40 @@ MANIFEST
 *~
 .DS_Store
 
-# Streamlit
-.streamlit/
-
-# Pytest
-.pytest_cache/
-.coverage
-
 # Logs
 *.log
 logs/
 
-# OS files
-Thumbs.db
+# Cache
+.cache/
+*.cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Azure
+.azure/
+*.cer
+*.csr
+
+# Data files
+*.csv
+*.xlsx
+*.db
+*.sqlite
+
+# Sensitive files
+config.env
+credentials.json
+secrets.json
+
+# OS
 .DS_Store
+Thumbs.db
 
-
-
-
+# Temporary files
+*.tmp
+*.bak
+*.temp
