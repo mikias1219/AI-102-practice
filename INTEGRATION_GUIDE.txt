@@ -1,0 +1,585 @@
+================================================================================
+                 COMPLETE INTEGRATION GUIDE
+        All Azure Resources + Cosmos DB + Separate Admin/User Portals
+================================================================================
+
+🎯 SYSTEM ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          USERS & ADMIN SEPARATE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  USER PORTAL (app_user_portal.py)    ADMIN DASHBOARD (admin_dashboard.py)  │
+│  ├─ Home                              ├─ Login
+│  ├─ Browse Jobs                       ├─ Dashboard
+│  ├─ Job Matcher                       ├─ Job Management
+│  └─ My Applications                   ├─ Application Management
+│                                       ├─ Activity Logging
+│                                       └─ Analytics & Reporting
+│
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            FASTAPI BACKEND                                 │
+│                     (backend_fastapi.py - Port 8000)                       │
+│  ├─ GET /api/jobs                                                         │
+│  ├─ POST /api/jobs                                                        │
+│  ├─ GET /api/applications                                                 │
+│  ├─ POST /api/applications                                                │
+│  ├─ GET /api/analytics                                                    │
+│  └─ GET /health                                                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                  AZURE COSMOS DB (job-db - Serverless)                     │
+│                                                                             │
+│  ┌─────────────────┬──────────────────┬───────────────────┬──────────────┐ │
+│  │  jobs container │ users container  │ applications      │ admin_       │ │
+│  │                 │                  │ container         │ activities   │ │
+│  │ Partition Key:  │ Partition Key:   │ Partition Key:    │ container    │ │
+│  │ /company_id     │ /user_id         │ /user_id          │ Partition:   │ │
+│  │                 │                  │                   │ /admin_id    │ │
+│  │ Sample: 3 jobs  │ Sample: 2 users  │ Submissions here  │ Logs here    │ │
+│  └─────────────────┴──────────────────┴───────────────────┴──────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                            ↓ ↓ ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         AZURE SERVICES                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ✅ Azure Document Intelligence - CV text extraction                       │
+│  ✅ Azure OpenAI - Embeddings & AI analysis                                │
+│  ✅ OpenAI API - Fallback embeddings                                       │
+│  ✅ Azure Blob Storage - File storage                                      │
+│  ✅ Azure Functions - Scheduled jobs                                       │
+│  ✅ PyPDF2 - Fallback PDF extraction                                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+🚀 RUNNING THE SYSTEM
+================================================================================
+
+STEP 1: Setup Environment
+────────────────────────
+cd /home/mikias/azure-agent-demo
+source .venv/bin/activate
+python update_env.py
+
+STEP 2: Verify Database
+─────────────────────
+python setup_cosmos_db.py
+  ✅ Should show: Database created, 4 containers, sample data inserted
+
+STEP 3: Run Admin Dashboard (Separate Process)
+──────────────────────────────────────────────
+streamlit run admin_dashboard.py --logger.level=error
+  • Opens on http://localhost:8501
+  • Login with password: SuperSecurePassword123!
+  • All admin activities logged to Cosmos DB
+
+
+STEP 4: Run User Portal (Separate Process)
+───────────────────────────────────────────
+In another terminal:
+streamlit run app_user_portal.py --logger.level=error
+  • Opens on http://localhost:8502 (or next available port)
+  • Users can browse jobs and apply
+  • All applications saved to Cosmos DB
+
+OPTIONAL: Run Backend API
+─────────────────────────
+In another terminal:
+uvicorn backend_fastapi:app --reload --port 8000
+  • REST API available at http://localhost:8000
+  • API docs at http://localhost:8000/docs
+
+
+👤 ADMIN DASHBOARD WORKFLOW
+================================================================================
+
+1. LOGIN
+   ├─ Visit http://localhost:8501
+   ├─ Enter password: SuperSecurePassword123!
+   ├─ Activity: "LOGIN" logged to admin_activities container
+   └─ ✅ Redirects to Dashboard
+
+2. DASHBOARD
+   ├─ View system overview
+   ├─ Check Azure services status:
+   │  ├─ Cosmos DB connection
+   │  ├─ Azure OpenAI endpoint
+   │  ├─ Document Intelligence endpoint
+   │  └─ Azure Blob Storage status
+   ├─ Quick stats from Cosmos DB:
+   │  ├─ Total jobs
+   │  ├─ Total users
+   │  └─ Total applications
+   └─ Activity: "REFRESH_STATS" logged
+
+3. JOB MANAGEMENT
+   ├─ View all jobs from Cosmos DB
+   ├─ Create new job:
+   │  ├─ Fill form
+   │  ├─ Save to jobs container
+   │  ├─ Activity: "CREATE_JOB" logged
+   │  └─ Confirmation with job ID
+   ├─ Delete job:
+   │  ├─ Click delete button
+   │  ├─ Remove from Cosmos DB
+   │  └─ Activity: "DELETE_JOB" logged
+   └─ Search jobs by title
+
+4. APPLICATION MANAGEMENT
+   ├─ View all user applications
+   ├─ Filter by status (submitted, reviewing, accepted, rejected)
+   ├─ Update application status:
+   │  ├─ Select new status from dropdown
+   │  ├─ Save to applications container
+   │  └─ Activity: "UPDATE_APPLICATION" logged
+   └─ View application details
+
+5. ACTIVITY LOG
+   ├─ Real-time admin activity display
+   ├─ Filter by action type:
+   │  ├─ LOGIN/LOGOUT
+   │  ├─ CREATE_JOB/DELETE_JOB
+   │  ├─ UPDATE_APPLICATION
+   │  ├─ REFRESH_STATS
+   │  └─ EXPORT_DATA
+   ├─ Each entry shows:
+   │  ├─ ✅/❌ Status icon
+   │  ├─ Action type
+   │  ├─ Details
+   │  └─ Timestamp
+   └─ All logged in admin_activities container
+
+6. ANALYTICS & REPORTING
+   ├─ Users section
+   │  ├─ View all users from users container
+   │  └─ User details & skills
+   ├─ Trends section
+   │  ├─ Jobs created over time
+   │  └─ Application status trends
+   └─ Reports section
+      ├─ Generate reports
+      ├─ Export data
+      └─ Activity: "GENERATE_REPORT" logged
+
+7. LOGOUT
+   ├─ Click logout button
+   ├─ Activity: "LOGOUT" logged to admin_activities
+   └─ ✅ Redirects to login page
+
+
+👨‍💼 USER PORTAL WORKFLOW
+================================================================================
+
+1. HOME
+   ├─ View statistics from Cosmos DB:
+   │  ├─ Total jobs available
+   │  ├─ Total users
+   │  └─ Total applications
+   └─ Getting started guide
+
+2. BROWSE JOBS
+   ├─ View all jobs from jobs container
+   ├─ Filter by location (text search)
+   ├─ Filter by minimum experience (slider)
+   └─ Job details for each:
+      ├─ Title & company
+      ├─ Location & job type
+      ├─ Required skills (up to 8 shown)
+      ├─ Salary range
+      └─ Job ID
+
+3. JOB MATCHER (Main Feature)
+   ├─ Upload PDF resume
+   ├─ STEP 1: Extract CV Text
+   │  ├─ Try Document Intelligence (if configured)
+   │  ├─ Fallback to PyPDF2
+   │  └─ Extract text content
+   ├─ STEP 2: AI Analysis
+   │  ├─ Extract skills (100+ database)
+   │  ├─ Detect experience years
+   │  └─ Display CV profile
+   ├─ STEP 3: Job Matching
+   │  ├─ Get all jobs from Cosmos DB
+   │  ├─ Calculate match scores:
+   │  │  ├─ Skill match: % of job skills user has
+   │  │  ├─ Experience match: user_exp / required_exp
+   │  │  └─ Combined: (skill_match * 60%) + (exp_match * 40%)
+   │  └─ Sort by combined score (highest first)
+   ├─ STEP 4: Display Results
+   │  ├─ Ranked list of matching jobs
+   │  ├─ Color codes:
+   │  │  ├─ 🟢 80%+ = Excellent Match
+   │  │  ├─ 🟡 60-80% = Good Match
+   │  │  └─ 🔴 <60% = Fair Match
+   │  ├─ Show matching skills
+   │  └─ For each job: "Apply" button
+   └─ STEP 5: Submit Application
+      ├─ User clicks "Apply"
+      ├─ Create application object:
+      │  ├─ application_id (uuid)
+      │  ├─ user_id (from session)
+      │  ├─ job_id (from job)
+      │  ├─ status: "submitted"
+      │  ├─ match_score: calculated score
+      │  └─ created_at: timestamp
+      ├─ Save to applications container in Cosmos DB
+      ├─ Show success confirmation
+      └─ ✅ Application available in "My Applications"
+
+4. MY APPLICATIONS
+   ├─ View all user's applications from Cosmos DB
+   ├─ Filter by status (submitted, reviewing, accepted, rejected)
+   ├─ For each application show:
+   │  ├─ Job ID
+   │  ├─ Current status
+   │  ├─ Match score
+   │  └─ Application date
+   └─ Status chart showing distribution
+
+
+💾 COSMOS DB DATA STRUCTURE
+================================================================================
+
+JOBS CONTAINER
+──────────────
+Partition Key: /company_id
+
+Fields:
+  id: uuid (unique identifier)
+  company_id: string (partition key)
+  title: string (job title)
+  description: string (job description)
+  skills: array[string] (required skills)
+  experience_required: integer (years)
+  location: string (job location)
+  salary_min: number (minimum salary)
+  salary_max: number (maximum salary)
+  job_type: string (Full-time, Part-time, Contract)
+  status: string (active, inactive)
+  created_at: string (ISO datetime)
+
+Sample Data: 3 jobs pre-loaded
+
+USERS CONTAINER
+───────────────
+Partition Key: /user_id
+
+Fields:
+  id: uuid (unique identifier)
+  user_id: string (partition key)
+  name: string (user name)
+  email: string (email address)
+  skills: array[string] (user skills)
+  experience: integer (years of experience)
+  location: string (user location)
+  bio: string (user bio)
+  created_at: string (ISO datetime)
+
+Sample Data: 2 users pre-loaded
+
+APPLICATIONS CONTAINER
+──────────────────────
+Partition Key: /user_id
+
+Fields:
+  id: uuid (unique identifier)
+  user_id: string (partition key - which user applied)
+  job_id: string (which job they applied for)
+  status: string (submitted, reviewing, accepted, rejected)
+  match_score: number (0-100, calculated match percentage)
+  cover_letter: string (optional)
+  created_at: string (ISO datetime when applied)
+  interview_date: string (ISO datetime, optional)
+
+Sample Data: Empty, populated when users apply
+
+ADMIN_ACTIVITIES CONTAINER
+───────────────────────────
+Partition Key: /admin_id
+
+Fields:
+  id: string (unique activity id with timestamp)
+  admin_id: string (partition key - which admin)
+  action: string (LOGIN, CREATE_JOB, DELETE_JOB, UPDATE_APPLICATION, etc.)
+  details: string (action details)
+  status: string (success or failed)
+  timestamp: string (ISO datetime)
+  created_at: string (ISO datetime)
+
+Sample Data: Populated as admin actions occur
+
+All Queries:
+  SELECT * FROM c WHERE c.admin_id = @admin_id ORDER BY c.timestamp DESC
+  SELECT * FROM c WHERE c.status = @status
+  SELECT * FROM c WHERE CONTAINS(UPPER(c.title), @search)
+
+
+🔌 AZURE SERVICES INTEGRATION
+================================================================================
+
+1. COSMOS DB
+   ├─ Endpoint: From COSMOS_ENDPOINT env var
+   ├─ Key: From COSMOS_KEY env var
+   ├─ Database: job-db
+   ├─ Used for:
+   │  ├─ Storing all jobs
+   │  ├─ Storing all users
+   │  ├─ Storing all applications (when users apply)
+   │  └─ Logging all admin activities
+   └─ Status: ✅ Fully integrated
+
+2. DOCUMENT INTELLIGENCE
+   ├─ Endpoint: From DOCUMENT_INTELLIGENCE_ENDPOINT env var
+   ├─ Key: From DOCUMENT_INTELLIGENCE_API_KEY env var
+   ├─ Model: "prebuilt-layout"
+   ├─ Used for:
+   │  ├─ Extract text from CV PDFs
+   │  ├─ Get structured layout
+   │  └─ Better accuracy than PyPDF2
+   ├─ Fallback: PyPDF2 if fails or not configured
+   └─ Status: ✅ Integrated with fallback
+
+3. AZURE OPENAI
+   ├─ Endpoint: From AZURE_OPENAI_ENDPOINT env var
+   ├─ Key: From AZURE_OPENAI_API_KEY env var
+   ├─ Deployment: From AZURE_OPENAI_EMBEDDING_DEPLOYMENT env var
+   ├─ Used for:
+   │  ├─ Generate embeddings (optional)
+   │  └─ AI analysis (optional)
+   ├─ Fallback: OpenAI API
+   └─ Status: ✅ Configured if provided
+
+4. OPENAI API
+   ├─ Key: From OPENAI_API_KEY env var
+   ├─ Used for:
+   │  ├─ Fallback embeddings if Azure not available
+   │  └─ AI analysis
+   └─ Status: ✅ Available as fallback
+
+5. AZURE BLOB STORAGE
+   ├─ Connection: From AZURE_STORAGE_CONNECTION_STRING env var
+   ├─ Used for:
+   │  ├─ Store uploaded PDFs (optional)
+   │  └─ Store processed data
+   └─ Status: ✅ Available if configured
+
+6. AZURE FUNCTIONS
+   ├─ App URL: From FUNCTION_APP_URL env var
+   ├─ Used for:
+   │  ├─ Scheduled job recommendations
+   │  ├─ Periodic analytics
+   │  └─ Background processing
+   └─ Status: ✅ Ready for deployment
+
+All Azure services can be checked from Admin Dashboard
+  → Check "Azure Services Status" section
+  → Each service shows connection status
+
+
+📝 ADMIN ACTIVITY LOGGING EXAMPLES
+================================================================================
+
+LOGIN Activity:
+  {
+    "id": "activity-1731504300.123456",
+    "admin_id": "admin",
+    "action": "LOGIN",
+    "details": "Admin login successful",
+    "status": "success",
+    "timestamp": "2025-11-13T08:45:00.123456"
+  }
+
+CREATE_JOB Activity:
+  {
+    "id": "activity-1731504305.456789",
+    "admin_id": "admin",
+    "action": "CREATE_JOB",
+    "details": "Created job: Senior Python Developer at TechCorp",
+    "status": "success",
+    "timestamp": "2025-11-13T08:45:05.456789"
+  }
+
+UPDATE_APPLICATION Activity:
+  {
+    "id": "activity-1731504310.789012",
+    "admin_id": "admin",
+    "action": "UPDATE_APPLICATION",
+    "details": "Updated application abc123 status to accepted",
+    "status": "success",
+    "timestamp": "2025-11-13T08:45:10.789012"
+  }
+
+DELETE_JOB Activity:
+  {
+    "id": "activity-1731504315.012345",
+    "admin_id": "admin",
+    "action": "DELETE_JOB",
+    "details": "Deleted job: job-001",
+    "status": "success",
+    "timestamp": "2025-11-13T08:45:15.012345"
+  }
+
+FAILED LOGIN Activity:
+  {
+    "id": "activity-1731504320.345678",
+    "admin_id": "unknown",
+    "action": "LOGIN_FAILED",
+    "details": "Invalid credentials",
+    "status": "failed",
+    "timestamp": "2025-11-13T08:45:20.345678"
+  }
+
+
+🧪 TESTING THE INTEGRATION
+================================================================================
+
+TEST 1: Database Connection
+──────────────────────────
+python setup_cosmos_db.py
+Expected:
+  ✅ Connected to Cosmos DB
+  ✅ Database created
+  ✅ 4 containers created
+  ✅ Sample data inserted
+
+TEST 2: Admin Login & Activity Logging
+──────────────────────────────────────
+streamlit run admin_dashboard.py
+1. Login with password: SuperSecurePassword123!
+2. Check Activity Log page
+3. Should see "LOGIN" activity recorded
+4. Try creating a job
+5. Should see "CREATE_JOB" activity
+
+TEST 3: Job Creation Saved to Cosmos DB
+────────────────────────────────────────
+Admin Dashboard:
+1. Go to Jobs → Create Job
+2. Fill in job details
+3. Click "Create Job"
+4. Confirm success message
+5. Go to Jobs → View Jobs
+6. Should see new job in list
+
+To verify in Cosmos DB:
+  → Azure Portal
+  → Cosmos DB account: selamnew
+  → Database: job-db
+  → Container: jobs
+  → Should see your new job document
+
+TEST 4: CV Upload & Job Matching
+────────────────────────────────
+User Portal (app_user_portal.py):
+1. Go to Job Matcher
+2. Upload a sample PDF resume
+3. Should extract skills and experience
+4. Should show matching jobs
+5. Click "Apply" on a job
+6. See success confirmation
+
+To verify application in Cosmos DB:
+  → Azure Portal
+  → Container: applications
+  → Should see your application document
+
+TEST 5: Admin Sees User Application
+────────────────────────────────────
+Admin Dashboard:
+1. Go to Applications → View Applications
+2. Should see the application just submitted
+3. Verify match score
+4. Try updating status
+5. Should see "UPDATE_APPLICATION" in Activity Log
+
+TEST 6: End-to-End Flow
+───────────────────────
+1. Admin creates job → Saved to jobs container
+2. User uploads CV → Extracted & analyzed
+3. System matches → Calculates scores
+4. User applies → Saved to applications container
+5. Admin reviews → Updated in applications container
+6. All activities → Logged to admin_activities container
+
+✅ All data persisted in Cosmos DB
+✅ All actions logged and auditable
+
+
+🎯 KEY FEATURES IMPLEMENTED
+================================================================================
+
+✅ SEPARATE ADMIN DASHBOARD
+   • Dedicated login & authentication
+   • Complete activity logging
+   • All admin actions tracked with timestamps
+   • Searchable & filterable activity history
+
+✅ SEPARATE USER PORTAL
+   • Independent from admin dashboard
+   • Upload CV & get matches
+   • View jobs & apply
+   • Track application status
+
+✅ COSMOS DB INTEGRATION
+   • Every job saved to jobs container
+   • Every application saved to applications container
+   • Every admin action logged to admin_activities container
+   • All with proper timestamps & metadata
+
+✅ AZURE SERVICES
+   • Document Intelligence for CV extraction
+   • Optional Azure OpenAI for embeddings
+   • Optional OpenAI API fallback
+   • Optional Azure Blob Storage
+   • Configurable Azure Functions
+
+✅ CLEAR SEPARATION
+   • Admin sees only admin tools
+   • Users see only user features
+   • No data mixing
+   • Independent workflows
+
+
+📊 VERIFICATION CHECKLIST
+================================================================================
+
+Run This:
+  1. python setup_cosmos_db.py                    ✅ Database ready
+  2. streamlit run admin_dashboard.py             ✅ Admin dashboard up
+  3. (In another terminal) streamlit run app_user_portal.py  ✅ User portal up
+  4. Admin logs in & creates job                  ✅ Job in Cosmos DB
+  5. Admin checks Activity Log                    ✅ Activity recorded
+  6. User browses jobs                            ✅ Sees created job
+  7. User uploads CV & applies                    ✅ Application saved
+  8. Admin sees application                       ✅ Shows in admin dashboard
+  9. Admin updates application status             ✅ Activity logged
+  10. Check Azure Portal                          ✅ All data in Cosmos DB
+
+
+🎉 COMPLETE INTEGRATION READY!
+================================================================================
+
+Everything is now:
+✅ Separated (Admin vs User)
+✅ Logged (All activities tracked)
+✅ Persistent (All data in Cosmos DB)
+✅ Azure-Integrated (All services connected)
+✅ Production-Ready (Error handling, validation)
+
+Start with:
+  streamlit run admin_dashboard.py
+
+Then in another terminal:
+  streamlit run app_user_portal.py
+
+Watch everything work seamlessly! 🚀
+
+================================================================================
+
