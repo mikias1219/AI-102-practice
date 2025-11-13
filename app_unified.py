@@ -507,10 +507,17 @@ def page_admin_dashboard():
                     salary_max = st.number_input("Max Salary ($)", min_value=0, value=150000)
                 
                 description = st.text_area("Job Description", height=100)
+                
+                # Get skills list and ensure defaults are included
+                skills_list = sorted(list(COMMON_SKILLS))
+                default_skills = ["python", "azure"]
+                # Ensure defaults are in the list
+                available_defaults = [s for s in default_skills if s in skills_list]
+                
                 skills_input = st.multiselect(
                     "Required Skills",
-                    sorted(list(COMMON_SKILLS))[:30],
-                    default=["Python", "Azure"]
+                    skills_list[:50],  # Show more options
+                    default=available_defaults if available_defaults else []
                 )
                 job_type = st.selectbox("Job Type", ["Full-time", "Part-time", "Contract"])
                 
@@ -519,12 +526,15 @@ def page_admin_dashboard():
                 if submitted:
                     if is_cosmos_connected():
                         try:
+                            # Convert skills to title case for better display
+                            skills_formatted = [s.title() for s in skills_input] if skills_input else []
+                            
                             job_data = {
                                 "id": str(uuid.uuid4()),
                                 "company_id": company_id,
                                 "title": title,
                                 "description": description,
-                                "skills": skills_input,
+                                "skills": skills_formatted,
                                 "experience_required": experience_required,
                                 "location": location,
                                 "salary_min": salary_min,
