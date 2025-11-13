@@ -40,12 +40,23 @@ class CosmosDBClient:
     """Azure Cosmos DB client wrapper"""
     
     def __init__(self):
+        # Initialize connected flag first
+        self.connected = False
         self.endpoint = os.getenv("COSMOS_ENDPOINT")
         self.key = os.getenv("COSMOS_KEY")
         self.db_name = os.getenv("COSMOS_DB_NAME", "job-db")
         
+        # Initialize containers as None
+        self.client = None
+        self.database = None
+        self.jobs_container = None
+        self.users_container = None
+        self.applications_container = None
+        self.recommendations_container = None
+        self.activities_container = None
+        
         if not self.endpoint or not self.key:
-            st.error("❌ Cosmos DB credentials not configured")
+            logger.warning("❌ Cosmos DB credentials not configured")
             return
         
         try:
@@ -64,18 +75,22 @@ class CosmosDBClient:
             except:
                 # Create if doesn't exist
                 try:
+                    from azure.cosmos import PartitionKey
                     self.activities_container = self.database.create_container(
                         id="admin_activities",
-                        partition_key="/admin_id"
+                        partition_key=PartitionKey(path="/admin_id")
                     )
-                except:
-                    self.activities_container = self.database.get_container_client("admin_activities")
+                except Exception as create_error:
+                    logger.warning(f"Could not create admin_activities container: {create_error}")
+                    try:
+                        self.activities_container = self.database.get_container_client("admin_activities")
+                    except:
+                        logger.warning("admin_activities container not available")
             
             logger.info(f"✅ Connected to Cosmos DB: {self.endpoint}")
             self.connected = True
         except Exception as e:
             logger.error(f"❌ Failed to connect to Cosmos DB: {e}")
-            st.error(f"❌ Database connection failed: {e}")
             self.connected = False
 
 # Initialize Cosmos DB
@@ -84,6 +99,14 @@ def get_cosmos_client():
     return CosmosDBClient()
 
 cosmos_db = get_cosmos_client()
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def is_cosmos_connected():
+    """Safely check if Cosmos DB is connected"""
+    return cosmos_db and hasattr(cosmos_db, 'connected') and cosmos_db.connected
 
 # ============================================================================
 # ADMIN AUTHENTICATION
@@ -99,7 +122,12 @@ def check_admin_access():
 
 def log_admin_activity(admin_id, action, details, status="success"):
     """Log admin activity to Cosmos DB"""
-    if not cosmos_db.connected:
+    if not is_cosmos_connected():
+        logger.warning(f"⚠️ Cannot log activity: Cosmos DB not connected")
+        return
+    
+    if not cosmos_db.activities_container:
+        logger.warning(f"⚠️ Cannot log activity: activities_container not available")
         return
     
     try:
@@ -120,7 +148,10 @@ def log_admin_activity(admin_id, action, details, status="success"):
 
 def get_admin_activities(admin_id, limit=50):
     """Get admin activities from Cosmos DB"""
-    if not cosmos_db.connected:
+    if not is_cosmos_connected():
+        return []
+    
+    if not cosmos_db.activities_container:
         return []
     
     try:
@@ -180,7 +211,7 @@ def page_dashboard():
     # Top metrics
     col1, col2, col3, col4 = st.columns(4)
     
-    if cosmos_db.connected:
+    if is_cosmos_connected():
         try:
             # Get stats
             jobs = list(cosmos_db.jobs_container.query_items("SELECT * FROM c"))
@@ -208,7 +239,7 @@ def page_dashboard():
         st.markdown("### 🔧 Azure Services Status")
         
         st.markdown("#### Cosmos DB")
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             st.success("✅ Connected")
             st.caption(f"Endpoint: {cosmos_db.endpoint}")
             st.caption(f"Database: {cosmos_db.db_name}")
@@ -267,7 +298,7 @@ def page_jobs():
     with tab1:
         st.subheader("All Jobs in Database")
         
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             try:
                 jobs = list(cosmos_db.jobs_container.query_items("SELECT * FROM c ORDER BY c.created_at DESC"))
                 
@@ -326,7 +357,7 @@ def page_jobs():
             submitted = st.form_submit_button("✅ Create Job", use_container_width=True)
             
             if submitted:
-                if cosmos_db.connected:
+                if is_cosmos_connected():
                     try:
                         import uuid
                         job_data = {
@@ -370,7 +401,7 @@ def page_jobs():
         
         search_title = st.text_input("Search by title")
         
-        if search_title and cosmos_db.connected:
+        if search_title and is_cosmos_connected():
             try:
                 query = "SELECT * FROM c WHERE CONTAINS(UPPER(c.title), @title)"
                 results = list(cosmos_db.jobs_container.query_items(
@@ -401,7 +432,7 @@ def page_applications():
     with tab1:
         st.subheader("All Job Applications")
         
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             try:
                 apps = list(cosmos_db.applications_container.query_items(
                     "SELECT * FROM c ORDER BY c.created_at DESC"
@@ -458,7 +489,7 @@ def page_applications():
     with tab2:
         st.subheader("Application Statistics")
         
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             try:
                 apps = list(cosmos_db.applications_container.query_items("SELECT * FROM c"))
                 
@@ -503,7 +534,7 @@ def page_activity_log():
         if st.button("🔄 Refresh", use_container_width=True):
             st.rerun()
     
-    if cosmos_db.connected:
+    if is_cosmos_connected():
         try:
             activities = get_admin_activities(st.session_state.admin_id, limit=100)
             
@@ -549,7 +580,7 @@ def page_analytics():
     with tab1:
         st.subheader("User Management")
         
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             try:
                 users = list(cosmos_db.users_container.query_items("SELECT * FROM c"))
                 
@@ -567,7 +598,7 @@ def page_analytics():
     with tab2:
         st.subheader("Trends & Metrics")
         
-        if cosmos_db.connected:
+        if is_cosmos_connected():
             try:
                 jobs = list(cosmos_db.jobs_container.query_items("SELECT * FROM c"))
                 apps = list(cosmos_db.applications_container.query_items("SELECT * FROM c"))
@@ -648,7 +679,7 @@ def main():
     st.sidebar.markdown("### 🔧 Azure Services")
     st.sidebar.info(f"""
     **Cosmos DB Status:**
-    {"✅ Connected" if cosmos_db.connected else "❌ Offline"}
+    {"✅ Connected" if is_cosmos_connected() else "❌ Offline"}
     
     **Containers:**
     • jobs
