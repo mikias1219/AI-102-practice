@@ -11,8 +11,15 @@ def main():
     global cog_key
 
     try:
-        # Get Configuration Settings
-        load_dotenv()
+        # Get Configuration Settings - Load .env from shared location
+        import pathlib
+        # Try to find .env in the shared Python folder (Lab 1 location)
+        shared_env = pathlib.Path(__file__).parent.parent.parent.parent / '01-use-azure-ai-services' / 'Python' / '.env'
+        if shared_env.exists():
+            load_dotenv(dotenv_path=shared_env)
+        else:
+            # Fallback to local .env if shared one doesn't exist
+            load_dotenv()
         ai_endpoint = os.getenv('AI_SERVICE_ENDPOINT')
         key_vault_name = os.getenv('KEY_VAULT')
         app_tenant = os.getenv('TENANT_ID')

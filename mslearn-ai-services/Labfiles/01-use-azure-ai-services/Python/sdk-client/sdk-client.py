@@ -8,8 +8,10 @@ def main():
     global ai_key
 
     try:
-        # Get Configuration Settings
-        load_dotenv()
+        # Get Configuration Settings - Load .env from parent directory (Python folder)
+        import pathlib
+        env_path = pathlib.Path(__file__).parent.parent / '.env'
+        load_dotenv(dotenv_path=env_path)
         ai_endpoint = os.getenv('AI_SERVICE_ENDPOINT')
         ai_key = os.getenv('AI_SERVICE_KEY')
 
